@@ -16,6 +16,21 @@
     box-shadow: 0 2px 10px rgba(0,0,0,0.25);
     padding: 14px; max-height: calc(100vh - 24px); overflow-y: auto;
   }
+  /* En pantallas pequeñas el panel, con un incendio cargado, puede llegar a
+     ocupar casi toda la pantalla. Se limita su altura para que el mapa se
+     vea siempre detrás, con scroll interno para ver todo el contenido. */
+  @media (max-width: 600px) {
+    #panel { max-height: 45vh; }
+  }
+
+  details.detalle-rios summary {
+    cursor: pointer; font-size: 12px; color: #b3541e; font-weight: 600;
+    margin-top: 4px; list-style: none;
+  }
+  details.detalle-rios summary::-webkit-details-marker { display: none; }
+  details.detalle-rios summary::before { content: "▸ "; }
+  details.detalle-rios[open] summary::before { content: "▾ "; }
+  details.detalle-rios > .fila:first-of-type { margin-top: 4px; }
   #panel-cabecera { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
   #panel h1 { font-size: 16px; margin: 0 0 4px 0; color: #b3541e; }
   #panel .subtitulo { font-size: 12px; color: #666; margin: 0 0 12px 0; }
@@ -73,6 +88,10 @@
     background: #4fc3f7; opacity: 0.5; border: 1.5px solid #01579b;
     vertical-align: middle; margin-right: 6px; flex-shrink: 0;
   }
+  #leyenda span.muestra-pfaf {
+    display: inline-block; width: 14px; height: 2px; background: #4dd0e1;
+    vertical-align: middle; margin-right: 6px; flex-shrink: 0;
+  }
 
   .leaflet-popup-content { font-size: 13px; }
 
@@ -128,6 +147,7 @@
   <div class="fila-leyenda"><span class="muestra"></span>Perímetro del área quemada</div>
   <div class="fila-leyenda"><span class="muestra-linea"></span>Río (masa de agua lineal)</div>
   <div class="fila-leyenda"><span class="muestra-superficial"></span>Lago / embalse (masa de agua superficial)</div>
+  <div class="fila-leyenda"><span class="muestra-pfaf"></span>Cauce (hidrografía Pfafstetter)</div>
 </div>
 <div id="aviso-agua">Acércate más (zoom) para ver los ríos y masas de agua</div>
 
@@ -172,10 +192,15 @@ const capaDemarcaciones = L.layerGroup();
 let demarcacionesCargadas = false;
 
 const capaMasasAgua = L.layerGroup();
+const capaPfafstetter = L.layerGroup();
 
 L.control.layers(
   { "Mapa (OSM)": capaOSM, "Ortofoto PNOA": capaPNOA },
-  { "Demarcaciones hidrográficas": capaDemarcaciones, "Masas de agua (ríos, lagos, embalses)": capaMasasAgua },
+  {
+    "Demarcaciones hidrográficas": capaDemarcaciones,
+    "Masas de agua (ríos, lagos, embalses)": capaMasasAgua,
+    "Hidrografía Pfafstetter (cauces)": capaPfafstetter,
+  },
   { collapsed: true, position: "topright" }
 ).addTo(map);
 
@@ -262,14 +287,24 @@ map.on("moveend", actualizarEtiquetasDemarcaciones);
 // (la OGC API Features de MITECO soporta el parámetro estándar bbox).
 const OGC_AGUA = "https://gis.miteco.gob.es/geoserver/ogc/features/v1/collections";
 const ZOOM_MIN_AGUA = 10;
+const ZOOM_MIN_PFAF = 12; // red mucho más densa (~330.000 tramos en toda España), hace falta más zoom
 let peticionAguaId = 0;
-let temporizadorAgua = null;
+let peticionPfafId = 0;
+let temporizadorCapasAgua = null;
 
 const avisoAgua = document.getElementById("aviso-agua");
 
 function bboxActual() {
   const b = map.getBounds();
   return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(",");
+}
+
+// Un único aviso para las dos capas: se muestra si alguna de las que está
+// activa en este momento necesita más zoom del que hay.
+function actualizarAvisoZoom() {
+  const faltaAgua = map.hasLayer(capaMasasAgua) && map.getZoom() < ZOOM_MIN_AGUA;
+  const faltaPfaf = map.hasLayer(capaPfafstetter) && map.getZoom() < ZOOM_MIN_PFAF;
+  avisoAgua.style.display = faltaAgua || faltaPfaf ? "block" : "none";
 }
 
 function estiloMasaLineal() {
@@ -291,10 +326,10 @@ async function actualizarMasasAgua() {
 
   if (map.getZoom() < ZOOM_MIN_AGUA) {
     capaMasasAgua.clearLayers();
-    avisoAgua.style.display = "block";
+    actualizarAvisoZoom();
     return;
   }
-  avisoAgua.style.display = "none";
+  actualizarAvisoZoom();
 
   const miPeticion = ++peticionAguaId;
   const bbox = bboxActual();
@@ -324,15 +359,59 @@ async function actualizarMasasAgua() {
   }
 }
 
+function estiloPfafstetter() {
+  return { color: "#4dd0e1", weight: 1.3, opacity: 0.9 };
+}
+
+function popupPfafstetter(p) {
+  const nombre = p.nom_rio && p.nom_rio !== "SIN NOMBRE" ? p.nom_rio : "Cauce sin nombre";
+  const km = (p.long_tramo_m / 1000).toLocaleString("es-ES", { maximumFractionDigits: 2 });
+  return `<b>${nombre}</b><br>Tramo: ${km} km<br><span style="font-size:11px;color:#777">Hidrografía Pfafstetter</span>`;
+}
+
+async function actualizarPfafstetter() {
+  if (!map.hasLayer(capaPfafstetter)) return;
+
+  if (map.getZoom() < ZOOM_MIN_PFAF) {
+    capaPfafstetter.clearLayers();
+    actualizarAvisoZoom();
+    return;
+  }
+  actualizarAvisoZoom();
+
+  const miPeticion = ++peticionPfafId;
+  const bbox = bboxActual();
+
+  try {
+    const res = await fetch(`${OGC_AGUA}/agua:rios_pfaf_cx/items?f=json&bbox=${bbox}&limit=5000`);
+    const gj = await res.json();
+    if (miPeticion !== peticionPfafId) return;
+
+    capaPfafstetter.clearLayers();
+    L.geoJSON(gj, {
+      style: estiloPfafstetter,
+      onEachFeature: (feat, layer) => layer.bindPopup(popupPfafstetter(feat.properties)),
+    }).addTo(capaPfafstetter);
+  } catch (e) {
+    if (miPeticion === peticionPfafId) console.error("Error cargando hidrografía Pfafstetter:", e);
+  }
+}
+
+function actualizarCapasAgua() {
+  actualizarMasasAgua();
+  actualizarPfafstetter();
+}
+
 map.on("overlayadd", (e) => {
   if (e.layer === capaMasasAgua) actualizarMasasAgua();
+  if (e.layer === capaPfafstetter) actualizarPfafstetter();
 });
 map.on("overlayremove", (e) => {
-  if (e.layer === capaMasasAgua) avisoAgua.style.display = "none";
+  if (e.layer === capaMasasAgua || e.layer === capaPfafstetter) actualizarAvisoZoom();
 });
 map.on("moveend", () => {
-  clearTimeout(temporizadorAgua);
-  temporizadorAgua = setTimeout(actualizarMasasAgua, 400);
+  clearTimeout(temporizadorCapasAgua);
+  temporizadorCapasAgua = setTimeout(actualizarCapasAgua, 400);
 });
 
 let capaBaseActual = capaOSM;
@@ -650,13 +729,20 @@ async function calcularRiosQuemados(fire, featuresQuemadas, contenedor, avisoDEL
       ? `<div class="etiqueta" style="font-size:11px; margin-top:2px;">y ${detalle.length - maxFilas} tramo(s) más…</div>`
       : "";
 
+    // Las dos cifras totales quedan siempre a la vista; el desglose (lista de
+    // ríos, nota de tramos Pfafstetter, aviso de zonas sin DEL) va colapsado
+    // por defecto tras "Ver desglose" — en móvil evita que el panel crezca
+    // tanto que tape el resto de controles del mapa.
     contenedor.innerHTML = `
       <div class="fila"><span class="etiqueta">Ríos dentro del área quemada:</span><span class="valor">${totalMasas.toLocaleString("es-ES", { maximumFractionDigits: 2 })} km</span></div>
-      ${filasDetalle}
-      ${resto}
-      <div class="fila" style="margin-top:6px;"><span class="etiqueta">Cauces (hidrografía Pfafstetter):</span><span class="valor">${totalPfaf.toLocaleString("es-ES", { maximumFractionDigits: 2 })} km</span></div>
-      <div class="etiqueta" style="font-size:11px;">${tramosPfaf} tramo(s) de la red hidrográfica detallada (incluye arroyos sin masa de agua asignada)</div>
-      ${avisoDEL || ""}
+      <div class="fila"><span class="etiqueta">Cauces (hidrografía Pfafstetter):</span><span class="valor">${totalPfaf.toLocaleString("es-ES", { maximumFractionDigits: 2 })} km</span></div>
+      <details class="detalle-rios">
+        <summary>Ver desglose</summary>
+        ${filasDetalle}
+        ${resto}
+        <div class="etiqueta" style="font-size:11px; margin-top:4px;">${tramosPfaf} tramo(s) de la red hidrográfica detallada (incluye arroyos sin masa de agua asignada)</div>
+        ${avisoDEL || ""}
+      </details>
     `;
   } catch (e) {
     if (miCalculo === calculoRiosId) {
