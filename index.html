@@ -586,7 +586,9 @@ async function calcularRiosQuemados(fire, featuresQuemadas, contenedor, avisoDEL
   const miCalculo = ++calculoRiosId;
   if (featuresQuemadas.length === 0) {
     contenedor.innerHTML = avisoDEL
-      ? `<div class="fila"><span class="etiqueta">Ríos dentro del área quemada:</span><span class="valor">—</span></div>${avisoDEL}`
+      ? `<div class="fila"><span class="etiqueta">Ríos dentro del área quemada:</span><span class="valor">—</span></div>
+         <div class="fila"><span class="etiqueta">Cauces (hidrografía Pfafstetter):</span><span class="valor">—</span></div>
+         ${avisoDEL}`
       : "";
     return;
   }
@@ -596,28 +598,46 @@ async function calcularRiosQuemados(fire, featuresQuemadas, contenedor, avisoDEL
   const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(",");
 
   try {
-    const res = await fetch(`${OGC_AGUA}/agua:masas_aguaspf_2027_l/items?f=json&bbox=${bbox}&limit=3000`);
-    const gj = await res.json();
+    const [resMasas, resPfaf] = await Promise.all([
+      fetch(`${OGC_AGUA}/agua:masas_aguaspf_2027_l/items?f=json&bbox=${bbox}&limit=3000`),
+      fetch(`${OGC_AGUA}/agua:rios_pfaf_cx/items?f=json&bbox=${bbox}&limit=5000`),
+    ]);
+    const [gjMasas, gjPfaf] = await Promise.all([resMasas.json(), resPfaf.json()]);
     if (miCalculo !== calculoRiosId) return; // el usuario ya cambió de incendio
 
     const { indice, bboxTotal } = construirIndiceEspacial(featuresQuemadas);
     if (!bboxTotal) { contenedor.innerHTML = ""; return; }
 
+    // Masas de agua oficiales (PHC 2022-2027) — unidades de reporting de la DMA
     const porRio = new Map(); // nombre_masa -> km
-    let total = 0;
-    gj.features.forEach((riverFeat) => {
+    let totalMasas = 0;
+    gjMasas.features.forEach((riverFeat) => {
       const km = kmLineaEnPoligonos(riverFeat, indice, bboxTotal);
       if (km > 0.005) {
-        total += km;
+        totalMasas += km;
         const nombre = riverFeat.properties.nombre_masa || "(sin nombre)";
         porRio.set(nombre, (porRio.get(nombre) || 0) + km);
       }
     });
 
+    // Hidrografía Pfafstetter — red de cauces mucho más densa (incluye arroyos
+    // sin masa de agua asignada), por eso se cuenta aparte y no se lista por
+    // nombre uno a uno (la mayoría de tramos vienen como "SIN NOMBRE").
+    let totalPfaf = 0;
+    let tramosPfaf = 0;
+    gjPfaf.features.forEach((tramoFeat) => {
+      const km = kmLineaEnPoligonos(tramoFeat, indice, bboxTotal);
+      if (km > 0.005) { totalPfaf += km; tramosPfaf++; }
+    });
+
     if (miCalculo !== calculoRiosId) return;
 
-    if (total < 0.005) {
-      contenedor.innerHTML = `<div class="fila"><span class="etiqueta">Ríos dentro del área quemada:</span><span class="valor">0 km</span></div>${avisoDEL || ""}`;
+    if (totalMasas < 0.005 && totalPfaf < 0.005) {
+      contenedor.innerHTML = `
+        <div class="fila"><span class="etiqueta">Ríos dentro del área quemada:</span><span class="valor">0 km</span></div>
+        <div class="fila"><span class="etiqueta">Cauces (hidrografía Pfafstetter):</span><span class="valor">0 km</span></div>
+        ${avisoDEL || ""}
+      `;
       return;
     }
 
@@ -631,9 +651,11 @@ async function calcularRiosQuemados(fire, featuresQuemadas, contenedor, avisoDEL
       : "";
 
     contenedor.innerHTML = `
-      <div class="fila"><span class="etiqueta">Ríos dentro del área quemada:</span><span class="valor">${total.toLocaleString("es-ES", { maximumFractionDigits: 2 })} km</span></div>
+      <div class="fila"><span class="etiqueta">Ríos dentro del área quemada:</span><span class="valor">${totalMasas.toLocaleString("es-ES", { maximumFractionDigits: 2 })} km</span></div>
       ${filasDetalle}
       ${resto}
+      <div class="fila" style="margin-top:6px;"><span class="etiqueta">Cauces (hidrografía Pfafstetter):</span><span class="valor">${totalPfaf.toLocaleString("es-ES", { maximumFractionDigits: 2 })} km</span></div>
+      <div class="etiqueta" style="font-size:11px;">${tramosPfaf} tramo(s) de la red hidrográfica detallada (incluye arroyos sin masa de agua asignada)</div>
       ${avisoDEL || ""}
     `;
   } catch (e) {
