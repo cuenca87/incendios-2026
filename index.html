@@ -16,8 +16,20 @@
     box-shadow: 0 2px 10px rgba(0,0,0,0.25);
     padding: 14px; max-height: calc(100vh - 24px); overflow-y: auto;
   }
+  #panel-cabecera { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
   #panel h1 { font-size: 16px; margin: 0 0 4px 0; color: #b3541e; }
   #panel .subtitulo { font-size: 12px; color: #666; margin: 0 0 12px 0; }
+
+  #btn-cerrar-panel {
+    flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; border: none;
+    background: #eee; color: #666; font-size: 14px; line-height: 1; cursor: pointer;
+  }
+  #btn-abrir-panel {
+    display: none; position: absolute; z-index: 1000; top: 12px; left: 12px;
+    width: 42px; height: 42px; border-radius: 50%; border: none;
+    background: rgba(255,255,255,0.97); box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+    font-size: 20px; cursor: pointer;
+  }
 
   #selector-incendio {
     width: 100%; padding: 8px; font-size: 14px; border-radius: 6px;
@@ -90,8 +102,13 @@
 
 <div id="map"></div>
 
+<button id="btn-abrir-panel" title="Mostrar panel">☰</button>
+
 <div id="panel">
-  <h1>🔥 Incendios en España — 2026</h1>
+  <div id="panel-cabecera">
+    <h1>🔥 Incendios en España — 2026</h1>
+    <button id="btn-cerrar-panel" title="Ocultar panel (para acceder al control de capas en pantallas pequeñas)">✕</button>
+  </div>
   <p class="subtitulo">Perímetros oficiales de Copernicus Emergency Management Service (Rapid Mapping)</p>
 
   <select id="selector-incendio">
@@ -734,6 +751,22 @@ async function mostrarIncendio(code) {
     : "";
   calcularRiosQuemados(fire, featuresQuemadas, contenedorRios, avisoDEL);
 }
+
+// En pantallas pequeñas el panel, una vez cargado un incendio, puede llegar a
+// ocupar casi todo el ancho/alto visible y tapar el control de capas (arriba a
+// la derecha) — igual que pasaba en el visor de EMSR900. Botón para ocultarlo.
+const panelEl = document.getElementById("panel");
+const btnCerrarPanel = document.getElementById("btn-cerrar-panel");
+const btnAbrirPanel = document.getElementById("btn-abrir-panel");
+
+btnCerrarPanel.addEventListener("click", () => {
+  panelEl.style.display = "none";
+  btnAbrirPanel.style.display = "block";
+});
+btnAbrirPanel.addEventListener("click", () => {
+  panelEl.style.display = "block";
+  btnAbrirPanel.style.display = "none";
+});
 
 cargarIndice();
 </script>
