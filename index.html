@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Incendios en España 2026 · Copernicus EMS</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+  #map { position: absolute; top: 0; bottom: 0; left: 0; right: 0; }
+
+  #panel {
+    position: absolute; z-index: 1000; top: 12px; left: 12px;
+    width: 320px; max-width: calc(100vw - 24px);
+    background: rgba(255,255,255,0.97); border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+    padding: 14px; max-height: calc(100vh - 24px); overflow-y: auto;
+  }
+  #panel h1 { font-size: 16px; margin: 0 0 4px 0; color: #b3541e; }
+  #panel .subtitulo { font-size: 12px; color: #666; margin: 0 0 12px 0; }
+
+  #selector-incendio {
+    width: 100%; padding: 8px; font-size: 14px; border-radius: 6px;
+    border: 1px solid #ccc; background: #fff; box-sizing: border-box;
+  }
+
+  #info-incendio { margin-top: 12px; font-size: 13px; line-height: 1.5; color: #333; }
+  #info-incendio .fila { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  #info-incendio .etiqueta { color: #777; }
+  #info-incendio .valor { font-weight: 600; text-align: right; }
+  #info-incendio .badge {
+    display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px;
+    border-radius: 10px; color: #fff; margin-left: 4px;
+  }
+  .badge-DEL { background: #2e7d32; }
+  .badge-FEP { background: #1565c0; }
+  .badge-GRA { background: #e65100; }
+  #info-incendio ul { margin: 4px 0 0 0; padding-left: 18px; }
+  #info-incendio a { color: #b3541e; }
+
+  #estado { margin-top: 10px; font-size: 12px; color: #888; min-height: 16px; }
+
+  #leyenda {
+    position: absolute; z-index: 1000; bottom: 20px; left: 12px;
+    background: rgba(255,255,255,0.95); border-radius: 8px; padding: 8px 12px;
+    font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); color: #333;
+  }
+  #leyenda .fila-leyenda { display: flex; align-items: center; margin-bottom: 4px; }
+  #leyenda .fila-leyenda:last-child { margin-bottom: 0; }
+  #leyenda span.muestra {
+    display: inline-block; width: 14px; height: 14px; border-radius: 3px;
+    background: #ff5722; opacity: 0.55; border: 1.5px solid #d84315;
+    vertical-align: middle; margin-right: 6px; flex-shrink: 0;
+  }
+  #leyenda span.muestra-linea {
+    display: inline-block; width: 14px; height: 3px; background: #0288d1;
+    vertical-align: middle; margin-right: 6px; flex-shrink: 0;
+  }
+  #leyenda span.muestra-superficial {
+    display: inline-block; width: 14px; height: 14px; border-radius: 3px;
+    background: #4fc3f7; opacity: 0.5; border: 1.5px solid #01579b;
+    vertical-align: middle; margin-right: 6px; flex-shrink: 0;
+  }
+
+  .leaflet-popup-content { font-size: 13px; }
+
+  .etiqueta-demarcacion {
+    background: rgba(255,255,255,0.85); border: none; box-shadow: none;
+    font-size: 11px; font-weight: 700; color: #0d47a1; padding: 1px 5px;
+    border-radius: 3px; white-space: nowrap; pointer-events: none;
+  }
+  .etiqueta-demarcacion::before { display: none; }
+
+  #control-opacidad {
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee;
+    font-size: 12px; color: #555;
+  }
+  #control-opacidad label { display: block; margin-bottom: 4px; }
+  #control-opacidad input[type="range"] { width: 100%; }
+
+  #aviso-agua {
+    position: absolute; z-index: 999; top: 12px; left: 50%; transform: translateX(-50%);
+    background: rgba(13,71,161,0.92); color: #fff; font-size: 12px;
+    padding: 6px 14px; border-radius: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="panel">
+  <h1>🔥 Incendios en España — 2026</h1>
+  <p class="subtitulo">Perímetros oficiales de Copernicus Emergency Management Service (Rapid Mapping)</p>
+
+  <select id="selector-incendio">
+    <option value="">— Selecciona un incendio —</option>
+  </select>
+
+  <div id="info-incendio"></div>
+  <div id="estado"></div>
+
+  <div id="control-opacidad">
+    <label for="rango-opacidad">Transparencia del mapa base: <span id="valor-opacidad">100%</span></label>
+    <input type="range" id="rango-opacidad" min="0" max="100" value="100">
+  </div>
+</div>
+
+<div id="leyenda">
+  <div class="fila-leyenda"><span class="muestra"></span>Perímetro del área quemada</div>
+  <div class="fila-leyenda"><span class="muestra-linea"></span>Río (masa de agua lineal)</div>
+  <div class="fila-leyenda"><span class="muestra-superficial"></span>Lago / embalse (masa de agua superficial)</div>
+</div>
+<div id="aviso-agua">Acércate más (zoom) para ver los ríos y masas de agua</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+<script>
+
+// Nombres en español para el desplegable (la API de Copernicus los da en inglés).
+const NOMBRES_ES = {
+  EMSR925: "Segorbe (Castellón)",
+  EMSR921: "Santa Cruz de la Serós (Huesca)",
+  EMSR913: "Niebla (Huelva)",
+  EMSR908: "Fermoselle (Zamora) y norte de Portugal",
+  EMSR906: "Provincia de León (Castropodame y Murias de Ponjos)",
+  EMSR905: "Artana (Castellón)",
+  EMSR900: "Sierra de Gredos (Segovia / Madrid)",
+  EMSR898: "La Mierla y Selas (Guadalajara)",
+  EMSR896: "Asín (Zaragoza)",
+  EMSR892: "Los Gallardos (Almería)",
+  EMSR888: "Les Gavarres (Girona)",
+  EMSR887: "Congosto (León)",
+  EMSR885: "San Esteban de Litera (Huesca)",
+  EMSR881: "Gibraleón (Huelva)",
+};
+
+const map = L.map("map", { zoomControl: true }).setView([40.2, -3.7], 6);
+
+const capaOSM = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: "© OpenStreetMap",
+  maxZoom: 19,
+}).addTo(map);
+
+const capaPNOA = L.tileLayer.wms("https://www.ign.es/wms-inspire/pnoa-ma", {
+  layers: "OI.OrthoimageCoverage",
+  format: "image/jpeg",
+  transparent: false,
+  attribution: "PNOA © IGN",
+  maxZoom: 19,
+});
+
+const capaDemarcaciones = L.layerGroup();
+let demarcacionesCargadas = false;
+
+const capaMasasAgua = L.layerGroup();
+
+L.control.layers(
+  { "Mapa (OSM)": capaOSM, "Ortofoto PNOA": capaPNOA },
+  { "Demarcaciones hidrográficas": capaDemarcaciones, "Masas de agua (ríos, lagos, embalses)": capaMasasAgua },
+  { collapsed: true, position: "topright" }
+).addTo(map);
+
+map.on("overlayadd", (e) => {
+  if (e.layer === capaDemarcaciones) cargarDemarcaciones();
+});
+
+let etiquetasDemarcaciones = []; // { feature, marker } — la posición se recalcula al mover/zoom
+
+async function cargarDemarcaciones() {
+  if (demarcacionesCargadas) {
+    actualizarEtiquetasDemarcaciones(); // la vista pudo cambiar mientras la capa estaba oculta
+    return;
+  }
+  demarcacionesCargadas = true;
+  try {
+    const res = await fetch("demarcaciones_hidrograficas.json");
+    const gj = await res.json();
+    L.geoJSON(gj, {
+      style: { color: "#0d47a1", weight: 1.5, dashArray: "6 4", fill: false },
+      onEachFeature: (feat, layer) => {
+        const nombre = feat.properties.nom_demar;
+        layer.bindPopup(`<b>Demarcación hidrográfica</b><br>${nombre}`);
+
+        const marker = L.marker(puntoEtiquetaInicial(feat, layer), {
+          icon: L.divIcon({ className: "etiqueta-demarcacion", html: nombre, iconSize: null }),
+          interactive: false,
+        }).addTo(capaDemarcaciones);
+        etiquetasDemarcaciones.push({ feature: feat, marker });
+      },
+    }).addTo(capaDemarcaciones);
+    actualizarEtiquetasDemarcaciones();
+  } catch (e) {
+    demarcacionesCargadas = false;
+    alert("No se pudieron cargar las demarcaciones hidrográficas.");
+  }
+}
+
+function puntoEtiquetaInicial(feat, layer) {
+  try {
+    const [lon, lat] = turf.pointOnFeature(feat).geometry.coordinates;
+    return [lat, lon];
+  } catch (e) {
+    const c = layer.getBounds().getCenter();
+    return [c.lat, c.lng];
+  }
+}
+
+// Recoloca cada etiqueta dentro de la parte de su demarcación que hay
+// actualmente en pantalla, para que no desaparezca al hacer zoom/pan
+// a una zona alejada de donde se calculó el punto original.
+function actualizarEtiquetasDemarcaciones() {
+  if (!map.hasLayer(capaDemarcaciones) || etiquetasDemarcaciones.length === 0) return;
+
+  const b = map.getBounds();
+  const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+  const vista = turf.bboxPolygon(bbox);
+
+  etiquetasDemarcaciones.forEach(({ feature, marker }) => {
+    let recorte = null;
+    try {
+      recorte = turf.intersect(feature, vista); // API de turf v6: dos features, no featureCollection
+    } catch (e) { /* geometría degenerada al recortar, se ignora */ }
+
+    if (!recorte) {
+      marker.setOpacity(0);
+      return;
+    }
+    try {
+      const [lon, lat] = turf.pointOnFeature(recorte).geometry.coordinates;
+      marker.setLatLng([lat, lon]);
+      marker.setOpacity(1);
+    } catch (e) {
+      marker.setOpacity(0);
+    }
+  });
+}
+
+map.on("moveend", actualizarEtiquetasDemarcaciones);
+
+// --- Masas de agua (PHC 2022-2027, tercer ciclo) — carga en vivo por bbox ---
+// A escala nacional son >1300 masas superficiales y >4100 tramos de río; cargarlo
+// todo de golpe no es viable, así que se pide solo lo visible en cada momento
+// (la OGC API Features de MITECO soporta el parámetro estándar bbox).
+const OGC_AGUA = "https://gis.miteco.gob.es/geoserver/ogc/features/v1/collections";
+const ZOOM_MIN_AGUA = 10;
+let peticionAguaId = 0;
+let temporizadorAgua = null;
+
+const avisoAgua = document.getElementById("aviso-agua");
+
+function bboxActual() {
+  const b = map.getBounds();
+  return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(",");
+}
+
+function estiloMasaLineal() {
+  return { color: "#0288d1", weight: 2.5 };
+}
+function estiloMasaSuperficial() {
+  return { color: "#01579b", weight: 1.5, fillColor: "#4fc3f7", fillOpacity: 0.5 };
+}
+
+function popupMasaAgua(p, esLineal) {
+  const medida = esLineal
+    ? `Longitud: ${p.longitud} km`
+    : `Superficie: ${p.area_masa} km²`;
+  return `<b>${p.nombre_masa}</b><br>${p.categoria} (${p.naturldad})<br>Demarcación: ${p.nom_ddhh}<br>${medida}`;
+}
+
+async function actualizarMasasAgua() {
+  if (!map.hasLayer(capaMasasAgua)) return;
+
+  if (map.getZoom() < ZOOM_MIN_AGUA) {
+    capaMasasAgua.clearLayers();
+    avisoAgua.style.display = "block";
+    return;
+  }
+  avisoAgua.style.display = "none";
+
+  const miPeticion = ++peticionAguaId;
+  const bbox = bboxActual();
+
+  try {
+    const [resL, resA] = await Promise.all([
+      fetch(`${OGC_AGUA}/agua:masas_aguaspf_2027_l/items?f=json&bbox=${bbox}&limit=2000`),
+      fetch(`${OGC_AGUA}/agua:masas_aguaspf_2027_a/items?f=json&bbox=${bbox}&limit=2000`),
+    ]);
+    const [gjL, gjA] = await Promise.all([resL.json(), resA.json()]);
+
+    if (miPeticion !== peticionAguaId) return; // ha llegado tarde, la vista ya cambió
+
+    capaMasasAgua.clearLayers();
+
+    L.geoJSON(gjL, {
+      style: estiloMasaLineal,
+      onEachFeature: (feat, layer) => layer.bindPopup(popupMasaAgua(feat.properties, true)),
+    }).addTo(capaMasasAgua);
+
+    L.geoJSON(gjA, {
+      style: estiloMasaSuperficial,
+      onEachFeature: (feat, layer) => layer.bindPopup(popupMasaAgua(feat.properties, false)),
+    }).addTo(capaMasasAgua);
+  } catch (e) {
+    if (miPeticion === peticionAguaId) console.error("Error cargando masas de agua:", e);
+  }
+}
+
+map.on("overlayadd", (e) => {
+  if (e.layer === capaMasasAgua) actualizarMasasAgua();
+});
+map.on("overlayremove", (e) => {
+  if (e.layer === capaMasasAgua) avisoAgua.style.display = "none";
+});
+map.on("moveend", () => {
+  clearTimeout(temporizadorAgua);
+  temporizadorAgua = setTimeout(actualizarMasasAgua, 400);
+});
+
+let capaBaseActual = capaOSM;
+const rangoOpacidad = document.getElementById("rango-opacidad");
+const valorOpacidad = document.getElementById("valor-opacidad");
+
+map.on("baselayerchange", (e) => {
+  capaBaseActual = e.layer;
+  rangoOpacidad.value = 100;
+  valorOpacidad.textContent = "100%";
+  capaBaseActual.setOpacity(1);
+});
+
+rangoOpacidad.addEventListener("input", () => {
+  const pct = Number(rangoOpacidad.value);
+  valorOpacidad.textContent = `${pct}%`;
+  capaBaseActual.setOpacity(pct / 100);
+});
+
+let capaPerimetro = L.layerGroup().addTo(map);
+let datosIncendios = null;
+
+function parseWKTPolygonBounds(wkt) {
+  const m = wkt.match(/\(\(([^)]+)\)\)/);
+  if (!m) return null;
+  const pares = m[1].split(",").map((p) => {
+    const [lon, lat] = p.trim().split(/\s+/).map(Number);
+    return [lat, lon];
+  });
+  return L.latLngBounds(pares);
+}
+
+function formatearFecha(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+async function cargarIndice() {
+  const res = await fetch("incendios_espana_2026.json");
+  const data = await res.json();
+  datosIncendios = data.fires;
+
+  const select = document.getElementById("selector-incendio");
+  datosIncendios.forEach((f) => {
+    const opt = document.createElement("option");
+    opt.value = f.code;
+    const nombre = NOMBRES_ES[f.code] || f.name;
+    opt.textContent = `${formatearFecha(f.eventTime)} — ${nombre}`;
+    select.appendChild(opt);
+  });
+
+  select.addEventListener("change", () => {
+    if (select.value) mostrarIncendio(select.value);
+    else limpiarSeleccion();
+  });
+}
+
+function limpiarSeleccion() {
+  capaPerimetro.clearLayers();
+  document.getElementById("info-incendio").innerHTML = "";
+  document.getElementById("estado").textContent = "";
+  calculoRiosId++; // invalida cualquier cálculo de ríos en curso
+}
+
+// --- Ríos quemados: km de masas de agua lineales estrictamente dentro del
+// perímetro del incendio (no basta con que la línea cruce/toque el polígono:
+// solo cuenta el tramo que de verdad cae dentro). Se calcula sobre TODA la
+// extensión del incendio (fire.extent), no solo lo que haya cargado la capa
+// interactiva de masas de agua, para que el número sea estable y completo.
+
+let calculoRiosId = 0;
+const PASO_MUESTREO_KM = 0.02; // 20 m — coherente con el RMSE (~20 m) de los productos CEMS
+
+function bboxSolapan(a, b) {
+  return a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
+}
+
+// Índice espacial en rejilla para los fragmentos quemados: con incendios grandes
+// (EMSR900 tiene 9583 polígonos) comprobar cada punto de muestreo contra TODOS
+// los fragmentos es demasiado lento (se colgaba, probado). Cada fragmento se
+// registra en las celdas de su bbox; al clasificar un punto solo se miran los
+// fragmentos de su celda, no los miles restantes.
+const TAM_CELDA_GRADOS = 0.003; // ~300 m — similar al tamaño típico de un fragmento quemado
+
+// Umbral de ruido: algunos fragmentos "quemados" (sobre todo del producto
+// Grading) llegan a tener CIENTOS DE MILES de vértices en una sola feature —
+// comprobado: una llegó a 816.701, y una era un MultiPolygon con miles de
+// sub-polígonos minúsculos (manchas de 1-2 píxeles Sentinel-2, ruido de la
+// clasificación automática) que turf.simplify no puede reducir por debajo del
+// número de formas que contiene, por mucha tolerancia que se le dé. Con eso
+// sin tratar, el cálculo tardaba >10 s en el incendio más grande (EMSR900).
+// Se descompone cada feature en sus polígonos individuales, se descartan los
+// que son ruido de clasificación (< UMBRAL_AREA_M2, unos pocos píxeles) y el
+// resto se simplifica — nada de esto afecta a la capa que se ve en el mapa
+// (esta limpieza es solo interna, para el cálculo de km de río quemado).
+const UMBRAL_AREA_M2 = 1000; // ~0.1 ha
+const TOLERANCIA_SIMPLIFY = 0.0005; // ~50 m
+
+function construirIndiceEspacial(featuresQuemadas) {
+  const indice = new Map(); // "gx,gy" -> [{feature, bbox}]
+  let bboxTotal = null;
+
+  function registrar(feature, bbox) {
+    const entrada = { feature, bbox };
+    bboxTotal = bboxTotal
+      ? [Math.min(bboxTotal[0], bbox[0]), Math.min(bboxTotal[1], bbox[1]), Math.max(bboxTotal[2], bbox[2]), Math.max(bboxTotal[3], bbox[3])]
+      : bbox.slice();
+
+    const gx0 = Math.floor(bbox[0] / TAM_CELDA_GRADOS), gx1 = Math.floor(bbox[2] / TAM_CELDA_GRADOS);
+    const gy0 = Math.floor(bbox[1] / TAM_CELDA_GRADOS), gy1 = Math.floor(bbox[3] / TAM_CELDA_GRADOS);
+    for (let gx = gx0; gx <= gx1; gx++) {
+      for (let gy = gy0; gy <= gy1; gy++) {
+        const clave = gx + "," + gy;
+        let celda = indice.get(clave);
+        if (!celda) { celda = []; indice.set(clave, celda); }
+        celda.push(entrada);
+      }
+    }
+  }
+
+  featuresQuemadas.forEach((featureOriginal) => {
+    const geometry = featureOriginal.geometry;
+    if (!geometry) return;
+    const poligonos = geometry.type === "Polygon" ? [geometry.coordinates]
+      : geometry.type === "MultiPolygon" ? geometry.coordinates
+      : [];
+
+    poligonos.forEach((anillos) => {
+      let poly;
+      try { poly = turf.polygon(anillos); } catch (e) { return; }
+
+      let area;
+      try { area = turf.area(poly); } catch (e) { area = 0; }
+      if (area < UMBRAL_AREA_M2) return; // ruido de clasificación, se descarta
+
+      let simplificado = poly;
+      try {
+        simplificado = turf.simplify(poly, { tolerance: TOLERANCIA_SIMPLIFY, highQuality: true });
+      } catch (e) { /* si falla, se usa la geometría sin simplificar */ }
+
+      let bbox;
+      try { bbox = turf.bbox(simplificado); } catch (e) { return; }
+      registrar(simplificado, bbox);
+    });
+  });
+
+  return { indice, bboxTotal };
+}
+
+function candidatosEnPunto(indice, lon, lat) {
+  const gx = Math.floor(lon / TAM_CELDA_GRADOS), gy = Math.floor(lat / TAM_CELDA_GRADOS);
+  return indice.get(gx + "," + gy) || null;
+}
+
+// Ray-casting mínimo sobre coordenadas en bruto (sin pasar por turf): en el
+// perfilado, turf.booleanPointInPolygon resultó ser el cuello de botella real
+// (no el número de puntos, que era pequeño) por el coste fijo de validación
+// que hace turf en cada llamada — aquí se llama decenas de miles de veces.
+function puntoEnAnillo(lon, lat, anillo) {
+  let dentro = false;
+  for (let i = 0, j = anillo.length - 1; i < anillo.length; j = i++) {
+    const xi = anillo[i][0], yi = anillo[i][1];
+    const xj = anillo[j][0], yj = anillo[j][1];
+    const interseca = (yi > lat) !== (yj > lat) &&
+      lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
+    if (interseca) dentro = !dentro;
+  }
+  return dentro;
+}
+
+function puntoEnGeometria(lon, lat, geometry) {
+  if (geometry.type === "Polygon") {
+    if (!puntoEnAnillo(lon, lat, geometry.coordinates[0])) return false;
+    for (let i = 1; i < geometry.coordinates.length; i++) {
+      if (puntoEnAnillo(lon, lat, geometry.coordinates[i])) return false; // cae en un agujero
+    }
+    return true;
+  }
+  if (geometry.type === "MultiPolygon") {
+    for (const poligono of geometry.coordinates) {
+      if (!puntoEnAnillo(lon, lat, poligono[0])) continue;
+      let enAgujero = false;
+      for (let i = 1; i < poligono.length; i++) {
+        if (puntoEnAnillo(lon, lat, poligono[i])) { enAgujero = true; break; }
+      }
+      if (!enAgujero) return true;
+    }
+    return false;
+  }
+  return false;
+}
+
+function distanciaHaversineKm(a, b) {
+  const R = 6371;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(b[1] - a[1]);
+  const dLon = toRad(b[0] - a[0]);
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a[1])) * Math.cos(toRad(b[1])) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
+// Longitud (km) de una línea (LineString o MultiLineString) que cae dentro de
+// alguno de los polígonos quemados. Se recorren directamente los vértices de la
+// línea (subdividiendo los tramos largos cada PASO_MUESTREO_KM) y se clasifica
+// el punto medio de cada trocito — más robusto que un recorte exacto
+// (turf.lineSplit) frente a anillos con topología algo sucia, que a veces trae
+// el producto Grading (GRA) de Copernicus. Nota: se evita turf.lineChunk/flatten
+// a propósito — en líneas largas con muchos vértices (p.ej. ríos de +15 km)
+// resultaban muchísimo más lentos (probado: de ~13 s a ~0,3 s en el peor caso).
+function kmLineaEnPoligonos(lineFeature, indiceEspacial, bboxTotalQuemado) {
+  const bboxLinea = turf.bbox(lineFeature);
+  if (!bboxSolapan(bboxTotalQuemado, bboxLinea)) return 0;
+
+  const geom = lineFeature.geometry;
+  if (!geom) return 0;
+  const lineas = geom.type === "MultiLineString" ? geom.coordinates : [geom.coordinates];
+
+  let kmDentro = 0;
+  lineas.forEach((coords) => {
+    for (let i = 0; i < coords.length - 1; i++) {
+      const a = coords[i], b = coords[i + 1];
+      const distancia = distanciaHaversineKm(a, b);
+      if (distancia === 0) continue;
+
+      const subdivisiones = Math.max(1, Math.ceil(distancia / PASO_MUESTREO_KM));
+      for (let s = 0; s < subdivisiones; s++) {
+        const tm = (s + 0.5) / subdivisiones;
+        const lon = a[0] + (b[0] - a[0]) * tm;
+        const lat = a[1] + (b[1] - a[1]) * tm;
+
+        const candidatos = candidatosEnPunto(indiceEspacial, lon, lat);
+        if (!candidatos) continue; // celda vacía: seguro que no está quemado
+
+        let dentro = false;
+        for (let k = 0; k < candidatos.length; k++) {
+          const p = candidatos[k];
+          if (lon < p.bbox[0] || lon > p.bbox[2] || lat < p.bbox[1] || lat > p.bbox[3]) continue;
+          try {
+            if (puntoEnGeometria(lon, lat, p.feature.geometry)) { dentro = true; break; }
+          } catch (e) { /* geometría degenerada, se descarta */ }
+        }
+        if (dentro) kmDentro += distancia / subdivisiones;
+      }
+    }
+  });
+
+  return kmDentro;
+}
+
+async function calcularRiosQuemados(fire, featuresQuemadas, contenedor, avisoDEL) {
+  const miCalculo = ++calculoRiosId;
+  if (featuresQuemadas.length === 0) {
+    contenedor.innerHTML = avisoDEL
+      ? `<div class="fila"><span class="etiqueta">Ríos dentro del área quemada:</span><span class="valor">—</span></div>${avisoDEL}`
+      : "";
+    return;
+  }
+
+  const b = parseWKTPolygonBounds(fire.extent);
+  if (!b) { contenedor.innerHTML = ""; return; }
+  const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(",");
+
+  try {
+    const res = await fetch(`${OGC_AGUA}/agua:masas_aguaspf_2027_l/items?f=json&bbox=${bbox}&limit=3000`);
+    const gj = await res.json();
+    if (miCalculo !== calculoRiosId) return; // el usuario ya cambió de incendio
+
+    const { indice, bboxTotal } = construirIndiceEspacial(featuresQuemadas);
+    if (!bboxTotal) { contenedor.innerHTML = ""; return; }
+
+    const porRio = new Map(); // nombre_masa -> km
+    let total = 0;
+    gj.features.forEach((riverFeat) => {
+      const km = kmLineaEnPoligonos(riverFeat, indice, bboxTotal);
+      if (km > 0.005) {
+        total += km;
+        const nombre = riverFeat.properties.nombre_masa || "(sin nombre)";
+        porRio.set(nombre, (porRio.get(nombre) || 0) + km);
+      }
+    });
+
+    if (miCalculo !== calculoRiosId) return;
+
+    if (total < 0.005) {
+      contenedor.innerHTML = `<div class="fila"><span class="etiqueta">Ríos dentro del área quemada:</span><span class="valor">0 km</span></div>${avisoDEL || ""}`;
+      return;
+    }
+
+    const detalle = [...porRio.entries()].sort((a, b) => b[1] - a[1]);
+    const maxFilas = 6;
+    const filasDetalle = detalle.slice(0, maxFilas)
+      .map(([nombre, km]) => `<div class="fila"><span class="etiqueta">– ${nombre}</span><span class="valor">${km.toLocaleString("es-ES", { maximumFractionDigits: 2 })} km</span></div>`)
+      .join("");
+    const resto = detalle.length > maxFilas
+      ? `<div class="etiqueta" style="font-size:11px; margin-top:2px;">y ${detalle.length - maxFilas} tramo(s) más…</div>`
+      : "";
+
+    contenedor.innerHTML = `
+      <div class="fila"><span class="etiqueta">Ríos dentro del área quemada:</span><span class="valor">${total.toLocaleString("es-ES", { maximumFractionDigits: 2 })} km</span></div>
+      ${filasDetalle}
+      ${resto}
+      ${avisoDEL || ""}
+    `;
+  } catch (e) {
+    if (miCalculo === calculoRiosId) {
+      console.error("Error calculando ríos afectados:", e);
+      contenedor.innerHTML = `<div class="fila"><span class="etiqueta" style="color:#b71c1c">⚠ No se pudo calcular el efecto sobre los ríos</span></div>`;
+    }
+  }
+}
+
+async function mostrarIncendio(code) {
+  const fire = datosIncendios.find((f) => f.code === code);
+  if (!fire) return;
+
+  capaPerimetro.clearLayers();
+  const estado = document.getElementById("estado");
+  const info = document.getElementById("info-incendio");
+  info.innerHTML = "";
+  estado.textContent = `Cargando perímetro (${fire.aois.length} zona${fire.aois.length > 1 ? "s" : ""})…`;
+
+  // Zoom inmediato al extent conocido, mientras se cargan los perímetros reales.
+  const boundsExtent = parseWKTPolygonBounds(fire.extent);
+  if (boundsExtent) map.fitBounds(boundsExtent, { padding: [20, 20] });
+
+  const conPerimetro = fire.aois.filter((a) => a.jsonUrl);
+  const sinPerimetro = fire.aois.filter((a) => !a.jsonUrl);
+
+  const resultados = await Promise.allSettled(
+    conPerimetro.map((aoi) => fetch(aoi.jsonUrl).then((r) => r.json()).then((gj) => ({ aoi, gj })))
+  );
+
+  let totalHectareas = 0;
+  let totalPoligonos = 0;
+  const tiposUsados = new Set();
+  let bounds = null;
+
+  resultados.forEach((r) => {
+    if (r.status !== "fulfilled") return;
+    const { aoi, gj } = r.value;
+    tiposUsados.add(aoi.productType);
+
+    gj.features.forEach((feat) => {
+      totalPoligonos++;
+      // La propiedad "area" del producto CEMS ya viene en hectáreas (contrastado
+      // contra turf.area en varias muestras); usarla evita recalcular con turf
+      // sobre miles de polígonos, que bloqueaba el hilo principal unos segundos
+      // en incendios grandes como EMSR900.
+      const areaProp = feat.properties && feat.properties.area;
+      if (typeof areaProp === "number") {
+        totalHectareas += areaProp;
+      } else {
+        try {
+          totalHectareas += turf.area(feat) / 10000;
+        } catch (e) { /* geometría no válida, se ignora en el cómputo de área */ }
+      }
+    });
+
+    const capa = L.geoJSON(gj, {
+      style: { color: "#d84315", weight: 1.5, fillColor: "#ff5722", fillOpacity: 0.55 },
+      onEachFeature: (feat, layer) => {
+        layer.bindPopup(`<b>${aoi.name}</b><br>Producto: ${aoi.productType}`);
+      },
+    }).addTo(capaPerimetro);
+
+    bounds = bounds ? bounds.extend(capa.getBounds()) : L.latLngBounds(capa.getBounds());
+  });
+
+  if (bounds && bounds.isValid()) {
+    map.fitBounds(bounds, { padding: [30, 30] });
+  }
+
+  const fallidos = resultados.filter((r) => r.status === "rejected").length;
+
+  const badges = [...tiposUsados].map((t) => `<span class="badge badge-${t}">${t}</span>`).join("");
+
+  let notaZonas = "";
+  if (sinPerimetro.length > 0) {
+    notaZonas = `<div class="fila"><span class="etiqueta">Sin perímetro disponible:</span></div>
+      <ul>${sinPerimetro.map((a) => `<li>${a.name}</li>`).join("")}</ul>`;
+  }
+  if (fallidos > 0) {
+    notaZonas += `<div class="fila"><span class="etiqueta" style="color:#b71c1c">⚠ ${fallidos} zona(s) no se pudieron cargar</span></div>`;
+  }
+
+  info.innerHTML = `
+    <div class="fila"><span class="etiqueta">Fecha del incendio:</span><span class="valor">${formatearFecha(fire.eventTime)}</span></div>
+    <div class="fila"><span class="etiqueta">Zonas (AOI):</span><span class="valor">${fire.aois.length}</span></div>
+    <div class="fila"><span class="etiqueta">Polígonos:</span><span class="valor">${totalPoligonos}</span></div>
+    <div class="fila"><span class="etiqueta">Superficie quemada aprox.:</span><span class="valor">${totalHectareas.toLocaleString("es-ES", { maximumFractionDigits: 0 })} ha</span></div>
+    <div class="fila"><span class="etiqueta">Producto(s):</span><span class="valor">${badges}</span></div>
+    ${notaZonas}
+    <div id="rios-afectados" style="margin-top:6px; padding-top:6px; border-top:1px solid #eee;">Calculando ríos afectados…</div>
+    <div class="fila" style="margin-top:8px;">
+      <a href="https://rapidmapping.emergency.copernicus.eu/${fire.code}" target="_blank" rel="noopener">Ver ficha oficial ${fire.code} en Copernicus EMS ↗</a>
+    </div>
+  `;
+
+  estado.textContent = "";
+
+  // Solo se usa el producto de Delineación (DEL) para este cálculo: es la capa
+  // vetada por un analista, mucho más limpia que el Grading (GRA) —el
+  // clasificador automático de GRA puede llegar a generar fragmentos con
+  // cientos de miles de vértices (ruido de clasificación píxel a píxel),
+  // comprobado que dispara el tiempo de cálculo a varios segundos sin
+  // aportar precisión real para esta estadística.
+  const aoisConDEL = resultados.filter((r) => r.status === "fulfilled" && r.value.aoi.productType === "DEL");
+  const aoisSinDEL = resultados.filter((r) => r.status === "fulfilled" && r.value.aoi.productType !== "DEL");
+
+  const featuresQuemadas = [];
+  aoisConDEL.forEach((r) => featuresQuemadas.push(...r.value.gj.features));
+
+  const contenedorRios = document.getElementById("rios-afectados");
+  const avisoDEL = aoisSinDEL.length > 0
+    ? `<div class="etiqueta" style="font-size:11px; margin-top:2px;">(solo zonas con Delineación disponible: ${aoisConDEL.length} de ${aoisConDEL.length + aoisSinDEL.length} — sin datos de ${aoisSinDEL.map((r) => r.value.aoi.name).join(", ")})</div>`
+    : "";
+  calcularRiosQuemados(fire, featuresQuemadas, contenedorRios, avisoDEL);
+}
+
+cargarIndice();
+</script>
+</body>
+</html>
