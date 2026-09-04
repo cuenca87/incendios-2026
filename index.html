@@ -106,12 +106,40 @@
   }
   .etiqueta-demarcacion::before { display: none; }
 
-  #control-opacidad, #control-opacidad-agua {
-    margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee;
-    font-size: 12px; color: #555;
+  #btn-abrir-capas {
+    display: none; position: absolute; z-index: 1000; top: 12px; right: 12px;
+    width: 42px; height: 42px; border-radius: 50%; border: none;
+    background: rgba(255,255,255,0.97); box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+    font-size: 18px; cursor: pointer;
   }
-  #control-opacidad label, #control-opacidad-agua label { display: block; margin-bottom: 4px; }
-  #control-opacidad input[type="range"], #control-opacidad-agua input[type="range"] { width: 100%; }
+
+  #capas-control {
+    position: absolute; z-index: 1000; top: 12px; right: 12px;
+    width: 260px; max-width: calc(100vw - 24px);
+    background: rgba(255,255,255,0.97); border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+    padding: 12px 14px; max-height: calc(100vh - 24px); overflow-y: auto;
+    font-size: 13px; color: #333;
+  }
+  .capas-cabecera { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .capas-cabecera span { font-weight: 700; color: #b3541e; font-size: 14px; }
+  #btn-cerrar-capas {
+    flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; border: none;
+    background: #eee; color: #666; font-size: 12px; line-height: 1; cursor: pointer;
+  }
+  .capas-grupo { padding: 8px 0; border-top: 1px solid #eee; }
+  .capas-grupo:first-of-type { border-top: none; padding-top: 2px; }
+  .capas-titulo-grupo { margin: 0 0 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #999; }
+  .capas-opcion { display: flex; align-items: center; gap: 7px; padding: 3px 0; cursor: pointer; }
+  .capas-opcion input { flex-shrink: 0; cursor: pointer; }
+  .capas-slider {
+    margin: 6px 0 4px 22px; font-size: 11.5px; color: #666;
+  }
+  .capas-slider label { display: block; margin-bottom: 3px; }
+  .capas-slider input[type="range"] { width: 100%; }
+  @media (max-width: 600px) {
+    #capas-control { max-height: 45vh; }
+  }
 
   #aviso-agua {
     position: absolute; z-index: 999; top: 12px; left: 50%; transform: translateX(-50%);
@@ -141,14 +169,42 @@
   <div id="info-incendio"></div>
   <div id="estado"></div>
 
-  <div id="control-opacidad">
-    <label for="rango-opacidad">Transparencia del mapa base: <span id="valor-opacidad">100%</span></label>
-    <input type="range" id="rango-opacidad" min="0" max="100" value="100">
+</div>
+
+<button id="btn-abrir-capas" title="Mostrar capas">🗺️</button>
+
+<div id="capas-control">
+  <div class="capas-cabecera">
+    <span>Capas</span>
+    <button id="btn-cerrar-capas" title="Ocultar capas">✕</button>
   </div>
 
-  <div id="control-opacidad-agua" style="display:none">
-    <label for="rango-opacidad-agua">Transparencia de masas de agua: <span id="valor-opacidad-agua">100%</span></label>
-    <input type="range" id="rango-opacidad-agua" min="0" max="100" value="100">
+  <div class="capas-grupo">
+    <p class="capas-titulo-grupo">Mapa base</p>
+    <label class="capas-opcion"><input type="radio" name="capa-base" value="osm" checked> Mapa (OSM)</label>
+    <label class="capas-opcion"><input type="radio" name="capa-base" value="pnoa"> Ortofoto PNOA</label>
+    <label class="capas-opcion"><input type="radio" name="capa-base" value="mtn25"> Mapa Topográfico Nacional (MTN25, IGN)</label>
+    <div class="capas-slider">
+      <label for="rango-opacidad">Transparencia: <span id="valor-opacidad">100%</span></label>
+      <input type="range" id="rango-opacidad" min="0" max="100" value="100">
+    </div>
+  </div>
+
+  <div class="capas-grupo">
+    <p class="capas-titulo-grupo">Hidrografía</p>
+    <label class="capas-opcion"><input type="checkbox" id="chk-demarcaciones"> Demarcaciones hidrográficas</label>
+
+    <label class="capas-opcion"><input type="checkbox" id="chk-masas-agua"> Masas de agua (ríos, lagos, embalses)</label>
+    <div class="capas-slider" id="control-opacidad-agua" style="display:none">
+      <label for="rango-opacidad-agua">Transparencia: <span id="valor-opacidad-agua">100%</span></label>
+      <input type="range" id="rango-opacidad-agua" min="0" max="100" value="100">
+    </div>
+
+    <label class="capas-opcion"><input type="checkbox" id="chk-pfafstetter"> Hidrografía Pfafstetter (cauces)</label>
+    <div class="capas-slider" id="control-opacidad-pfaf" style="display:none">
+      <label for="rango-opacidad-pfaf">Transparencia: <span id="valor-opacidad-pfaf">75%</span></label>
+      <input type="range" id="rango-opacidad-pfaf" min="0" max="100" value="75">
+    </div>
   </div>
 </div>
 
@@ -214,19 +270,14 @@ let demarcacionesCargadas = false;
 const capaMasasAgua = L.layerGroup();
 const capaPfafstetter = L.layerGroup();
 
-L.control.layers(
-  { "Mapa (OSM)": capaOSM, "Ortofoto PNOA": capaPNOA, "Mapa Topográfico Nacional (MTN25, IGN)": capaMTN25 },
-  {
-    "Demarcaciones hidrográficas": capaDemarcaciones,
-    "Masas de agua (ríos, lagos, embalses)": capaMasasAgua,
-    "Hidrografía Pfafstetter (cauces)": capaPfafstetter,
-  },
-  { collapsed: true, position: "topright" }
-).addTo(map);
-
-map.on("overlayadd", (e) => {
-  if (e.layer === capaDemarcaciones) cargarDemarcaciones();
-});
+// Panel de capas propio (en vez de L.control.layers): así los sliders de
+// transparencia pueden vivir junto al selector de cada capa, en lugar de en
+// un panel aparte. Es un div absoluto normal, como el resto de controles de
+// la app — hay que decirle a Leaflet que no interprete los clics/scroll
+// dentro de él como interacción con el mapa.
+const capasControlEl = document.getElementById("capas-control");
+L.DomEvent.disableClickPropagation(capasControlEl);
+L.DomEvent.disableScrollPropagation(capasControlEl);
 
 let etiquetasDemarcaciones = []; // { feature, marker } — la posición se recalcula al mover/zoom
 
@@ -307,12 +358,21 @@ map.on("moveend", actualizarEtiquetasDemarcaciones);
 // (la OGC API Features de MITECO soporta el parámetro estándar bbox).
 const OGC_AGUA = "https://gis.miteco.gob.es/geoserver/ogc/features/v1/collections";
 const ZOOM_MIN_AGUA = 10;
-const ZOOM_MIN_PFAF = 12; // red mucho más densa (~330.000 tramos en toda España), hace falta más zoom
+// Red muy densa (~330.000 tramos en toda España, ~0,65/km² de media). La API
+// solo devuelve como mucho PAGINA_PFAF tramos por petición (sin paginar el
+// resto): a menos zoom que esto, el área visible puede contener muchos más
+// tramos de los que caben en una página, y se vería un subconjunto arbitrario
+// (no "todo pero pequeño", sino un mapa incompleto y potencialmente engañoso).
+// Zoom 11 + un límite más alto es el punto en el que ese riesgo es asumible;
+// bajarlo más exigiría paginar de verdad (varias peticiones encadenadas).
+const ZOOM_MIN_PFAF = 11;
+const PAGINA_PFAF = 8000;
 let peticionAguaId = 0;
 let peticionPfafId = 0;
 let temporizadorCapasAgua = null;
 let capaMasasAguaLineas = null;
 let capaMasasAguaPoligonos = null;
+let capaPfafstetterLayer = null;
 
 const avisoAgua = document.getElementById("aviso-agua");
 
@@ -399,8 +459,13 @@ function actualizarOpacidadAgua() {
   if (capaMasasAguaPoligonos) capaMasasAguaPoligonos.setStyle(estiloMasaSuperficial);
 }
 
+// Transparencia de Pfafstetter, igual que opacidadAgua: controlable en
+// caliente por el usuario. Arranca en 0.75 (no en 1) para conservar el
+// aspecto "de fondo, discreto" que ya tenía antes de tener scroll propio.
+let opacidadPfaf = 0.75;
+
 function estiloPfafstetter() {
-  return { color: "#64b5f6", weight: 1, opacity: 0.75 };
+  return { color: "#64b5f6", weight: 1, opacity: opacidadPfaf };
 }
 
 function popupPfafstetter(p) {
@@ -423,12 +488,12 @@ async function actualizarPfafstetter() {
   const bbox = bboxActual();
 
   try {
-    const res = await fetch(`${OGC_AGUA}/agua:rios_pfaf_cx/items?f=json&bbox=${bbox}&limit=5000`);
+    const res = await fetch(`${OGC_AGUA}/agua:rios_pfaf_cx/items?f=json&bbox=${bbox}&limit=${PAGINA_PFAF}`);
     const gj = await res.json();
     if (miPeticion !== peticionPfafId) return;
 
     capaPfafstetter.clearLayers();
-    L.geoJSON(gj, {
+    capaPfafstetterLayer = L.geoJSON(gj, {
       style: estiloPfafstetter,
       onEachFeature: (feat, layer) => layer.bindPopup(popupPfafstetter(feat.properties)),
     }).addTo(capaPfafstetter);
@@ -437,14 +502,52 @@ async function actualizarPfafstetter() {
   }
 }
 
+// Igual que actualizarOpacidadAgua: reestiliza sin volver a pedir datos.
+function actualizarOpacidadPfaf() {
+  if (capaPfafstetterLayer) capaPfafstetterLayer.setStyle(estiloPfafstetter);
+}
+
 function actualizarCapasAgua() {
   actualizarMasasAgua();
   actualizarPfafstetter();
 }
 
+map.on("moveend", () => {
+  clearTimeout(temporizadorCapasAgua);
+  temporizadorCapasAgua = setTimeout(actualizarCapasAgua, 400);
+});
+
+// --- Mapa base: radios del panel de capas ---
+const CAPAS_BASE = { osm: capaOSM, pnoa: capaPNOA, mtn25: capaMTN25 };
+let capaBaseActual = capaOSM;
+const rangoOpacidad = document.getElementById("rango-opacidad");
+const valorOpacidad = document.getElementById("valor-opacidad");
+
+document.querySelectorAll('input[name="capa-base"]').forEach((radio) => {
+  radio.addEventListener("change", () => {
+    if (!radio.checked) return;
+    map.removeLayer(capaBaseActual);
+    capaBaseActual = CAPAS_BASE[radio.value];
+    map.addLayer(capaBaseActual);
+    rangoOpacidad.value = 100;
+    valorOpacidad.textContent = "100%";
+    capaBaseActual.setOpacity(1);
+  });
+});
+
+rangoOpacidad.addEventListener("input", () => {
+  const pct = Number(rangoOpacidad.value);
+  valorOpacidad.textContent = `${pct}%`;
+  capaBaseActual.setOpacity(pct / 100);
+});
+
+// --- Hidrografía: checkboxes + sliders del panel de capas ---
 const controlOpacidadAgua = document.getElementById("control-opacidad-agua");
 const rangoOpacidadAgua = document.getElementById("rango-opacidad-agua");
 const valorOpacidadAgua = document.getElementById("valor-opacidad-agua");
+const controlOpacidadPfaf = document.getElementById("control-opacidad-pfaf");
+const rangoOpacidadPfaf = document.getElementById("rango-opacidad-pfaf");
+const valorOpacidadPfaf = document.getElementById("valor-opacidad-pfaf");
 
 rangoOpacidadAgua.addEventListener("input", () => {
   const pct = Number(rangoOpacidadAgua.value);
@@ -452,40 +555,58 @@ rangoOpacidadAgua.addEventListener("input", () => {
   opacidadAgua = pct / 100;
   actualizarOpacidadAgua();
 });
+rangoOpacidadPfaf.addEventListener("input", () => {
+  const pct = Number(rangoOpacidadPfaf.value);
+  valorOpacidadPfaf.textContent = `${pct}%`;
+  opacidadPfaf = pct / 100;
+  actualizarOpacidadPfaf();
+});
 
-map.on("overlayadd", (e) => {
-  if (e.layer === capaMasasAgua) {
+document.getElementById("chk-demarcaciones").addEventListener("change", (e) => {
+  if (e.target.checked) {
+    map.addLayer(capaDemarcaciones);
+    cargarDemarcaciones();
+  } else {
+    map.removeLayer(capaDemarcaciones);
+  }
+});
+
+document.getElementById("chk-masas-agua").addEventListener("change", (e) => {
+  if (e.target.checked) {
+    map.addLayer(capaMasasAgua);
     actualizarMasasAgua();
     controlOpacidadAgua.style.display = "block";
-  }
-  if (e.layer === capaPfafstetter) actualizarPfafstetter();
-});
-map.on("overlayremove", (e) => {
-  if (e.layer === capaMasasAgua) {
+  } else {
+    map.removeLayer(capaMasasAgua);
     controlOpacidadAgua.style.display = "none";
+    actualizarAvisoZoom();
   }
-  if (e.layer === capaMasasAgua || e.layer === capaPfafstetter) actualizarAvisoZoom();
-});
-map.on("moveend", () => {
-  clearTimeout(temporizadorCapasAgua);
-  temporizadorCapasAgua = setTimeout(actualizarCapasAgua, 400);
 });
 
-let capaBaseActual = capaOSM;
-const rangoOpacidad = document.getElementById("rango-opacidad");
-const valorOpacidad = document.getElementById("valor-opacidad");
-
-map.on("baselayerchange", (e) => {
-  capaBaseActual = e.layer;
-  rangoOpacidad.value = 100;
-  valorOpacidad.textContent = "100%";
-  capaBaseActual.setOpacity(1);
+document.getElementById("chk-pfafstetter").addEventListener("change", (e) => {
+  if (e.target.checked) {
+    map.addLayer(capaPfafstetter);
+    actualizarPfafstetter();
+    controlOpacidadPfaf.style.display = "block";
+  } else {
+    map.removeLayer(capaPfafstetter);
+    controlOpacidadPfaf.style.display = "none";
+    actualizarAvisoZoom();
+  }
 });
 
-rangoOpacidad.addEventListener("input", () => {
-  const pct = Number(rangoOpacidad.value);
-  valorOpacidad.textContent = `${pct}%`;
-  capaBaseActual.setOpacity(pct / 100);
+// --- Botón para mostrar/ocultar el panel de capas (mismo patrón que el panel principal) ---
+const capasControlPanelEl = document.getElementById("capas-control");
+const btnAbrirCapas = document.getElementById("btn-abrir-capas");
+const btnCerrarCapas = document.getElementById("btn-cerrar-capas");
+
+btnCerrarCapas.addEventListener("click", () => {
+  capasControlPanelEl.style.display = "none";
+  btnAbrirCapas.style.display = "block";
+});
+btnAbrirCapas.addEventListener("click", () => {
+  capasControlPanelEl.style.display = "block";
+  btnAbrirCapas.style.display = "none";
 });
 
 let capaPerimetro = L.layerGroup().addTo(map);
