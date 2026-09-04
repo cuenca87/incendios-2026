@@ -80,24 +80,28 @@
     vertical-align: middle; margin-right: 6px; flex-shrink: 0;
   }
   #leyenda span.muestra-linea {
-    display: inline-block; width: 14px; height: 3px; background: #0288d1;
+    display: inline-block; width: 14px; height: 3px; background: #0d47a1;
     vertical-align: middle; margin-right: 6px; flex-shrink: 0;
   }
   #leyenda span.muestra-superficial {
     display: inline-block; width: 14px; height: 14px; border-radius: 3px;
-    background: #4fc3f7; opacity: 0.5; border: 1.5px solid #01579b;
+    background: #42a5f5; opacity: 0.55; border: 1.5px solid #0d47a1;
     vertical-align: middle; margin-right: 6px; flex-shrink: 0;
   }
   #leyenda span.muestra-pfaf {
-    display: inline-block; width: 14px; height: 2px; background: #4dd0e1;
+    display: inline-block; width: 14px; height: 1.5px; background: #64b5f6;
     vertical-align: middle; margin-right: 6px; flex-shrink: 0;
+  }
+  #leyenda span.muestra-demarcacion {
+    display: inline-block; width: 14px; height: 0; margin-right: 6px; flex-shrink: 0;
+    border-top: 3px dashed #37474f; vertical-align: middle;
   }
 
   .leaflet-popup-content { font-size: 13px; }
 
   .etiqueta-demarcacion {
     background: rgba(255,255,255,0.85); border: none; box-shadow: none;
-    font-size: 11px; font-weight: 700; color: #0d47a1; padding: 1px 5px;
+    font-size: 11px; font-weight: 700; color: #37474f; padding: 1px 5px;
     border-radius: 3px; white-space: nowrap; pointer-events: none;
   }
   .etiqueta-demarcacion::before { display: none; }
@@ -150,6 +154,7 @@
 
 <div id="leyenda">
   <div class="fila-leyenda"><span class="muestra"></span>Perímetro del área quemada</div>
+  <div class="fila-leyenda"><span class="muestra-demarcacion"></span>Límite de demarcación hidrográfica</div>
   <div class="fila-leyenda"><span class="muestra-linea"></span>Río (masa de agua lineal)</div>
   <div class="fila-leyenda"><span class="muestra-superficial"></span>Lago / embalse (masa de agua superficial)</div>
   <div class="fila-leyenda"><span class="muestra-pfaf"></span>Cauce (hidrografía Pfafstetter)</div>
@@ -235,7 +240,7 @@ async function cargarDemarcaciones() {
     const res = await fetch("demarcaciones_hidrograficas.json");
     const gj = await res.json();
     L.geoJSON(gj, {
-      style: { color: "#0d47a1", weight: 1.5, dashArray: "6 4", fill: false },
+      style: { color: "#37474f", weight: 3, dashArray: "10 5", fill: false },
       onEachFeature: (feat, layer) => {
         const nombre = feat.properties.nom_demar;
         layer.bindPopup(`<b>Demarcación hidrográfica</b><br>${nombre}`);
@@ -330,11 +335,15 @@ function actualizarAvisoZoom() {
 // datos al servidor.
 let opacidadAgua = 1;
 
+// Paleta de hidrografía: masas de agua oficiales en azul fuerte (capa
+// "importante"), Pfafstetter en azul claro y fino (red densa de fondo, no
+// debe competir visualmente), demarcaciones fuera del azul (gris pizarra
+// grueso) para que no se confunda con ninguna de las dos redes de agua.
 function estiloMasaLineal() {
-  return { color: "#0288d1", weight: 2.5, opacity: opacidadAgua };
+  return { color: "#0d47a1", weight: 3, opacity: opacidadAgua };
 }
 function estiloMasaSuperficial() {
-  return { color: "#01579b", weight: 1.5, fillColor: "#4fc3f7", opacity: opacidadAgua, fillOpacity: 0.5 * opacidadAgua };
+  return { color: "#0d47a1", weight: 2, fillColor: "#42a5f5", opacity: opacidadAgua, fillOpacity: 0.45 * opacidadAgua };
 }
 
 function popupMasaAgua(p, esLineal) {
@@ -391,7 +400,7 @@ function actualizarOpacidadAgua() {
 }
 
 function estiloPfafstetter() {
-  return { color: "#4dd0e1", weight: 1.3, opacity: 0.9 };
+  return { color: "#64b5f6", weight: 1, opacity: 0.75 };
 }
 
 function popupPfafstetter(p) {
