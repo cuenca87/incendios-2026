@@ -102,12 +102,12 @@
   }
   .etiqueta-demarcacion::before { display: none; }
 
-  #control-opacidad {
+  #control-opacidad, #control-opacidad-agua {
     margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee;
     font-size: 12px; color: #555;
   }
-  #control-opacidad label { display: block; margin-bottom: 4px; }
-  #control-opacidad input[type="range"] { width: 100%; }
+  #control-opacidad label, #control-opacidad-agua label { display: block; margin-bottom: 4px; }
+  #control-opacidad input[type="range"], #control-opacidad-agua input[type="range"] { width: 100%; }
 
   #aviso-agua {
     position: absolute; z-index: 999; top: 12px; left: 50%; transform: translateX(-50%);
@@ -140,6 +140,11 @@
   <div id="control-opacidad">
     <label for="rango-opacidad">Transparencia del mapa base: <span id="valor-opacidad">100%</span></label>
     <input type="range" id="rango-opacidad" min="0" max="100" value="100">
+  </div>
+
+  <div id="control-opacidad-agua" style="display:none">
+    <label for="rango-opacidad-agua">Transparencia de masas de agua: <span id="valor-opacidad-agua">100%</span></label>
+    <input type="range" id="rango-opacidad-agua" min="0" max="100" value="100">
   </div>
 </div>
 
@@ -188,6 +193,16 @@ const capaPNOA = L.tileLayer.wms("https://www.ign.es/wms-inspire/pnoa-ma", {
   maxZoom: 19,
 });
 
+// Capa combinada del IGN: auto-escala desde el Atlas Nacional hasta el Mapa
+// Topográfico Nacional 1:25.000 (y Alta Resolución) según el nivel de zoom.
+const capaMTN25 = L.tileLayer.wms("https://www.ign.es/wms-inspire/mapa-raster", {
+  layers: "mtn_rasterizado",
+  format: "image/png",
+  transparent: false,
+  attribution: "MTN25 © IGN",
+  maxZoom: 19,
+});
+
 const capaDemarcaciones = L.layerGroup();
 let demarcacionesCargadas = false;
 
@@ -195,7 +210,7 @@ const capaMasasAgua = L.layerGroup();
 const capaPfafstetter = L.layerGroup();
 
 L.control.layers(
-  { "Mapa (OSM)": capaOSM, "Ortofoto PNOA": capaPNOA },
+  { "Mapa (OSM)": capaOSM, "Ortofoto PNOA": capaPNOA, "Mapa Topográfico Nacional (MTN25, IGN)": capaMTN25 },
   {
     "Demarcaciones hidrográficas": capaDemarcaciones,
     "Masas de agua (ríos, lagos, embalses)": capaMasasAgua,
@@ -291,6 +306,8 @@ const ZOOM_MIN_PFAF = 12; // red mucho más densa (~330.000 tramos en toda Espa�
 let peticionAguaId = 0;
 let peticionPfafId = 0;
 let temporizadorCapasAgua = null;
+let capaMasasAguaLineas = null;
+let capaMasasAguaPoligonos = null;
 
 const avisoAgua = document.getElementById("aviso-agua");
 
@@ -307,11 +324,17 @@ function actualizarAvisoZoom() {
   avisoAgua.style.display = faltaAgua || faltaPfaf ? "block" : "none";
 }
 
+// Transparencia de masas de agua, controlada por el usuario (0-1). Se aplica
+// como multiplicador sobre la opacidad propia de cada estilo, y se puede
+// cambiar en caliente (ver actualizarOpacidadAgua) sin volver a pedir los
+// datos al servidor.
+let opacidadAgua = 1;
+
 function estiloMasaLineal() {
-  return { color: "#0288d1", weight: 2.5 };
+  return { color: "#0288d1", weight: 2.5, opacity: opacidadAgua };
 }
 function estiloMasaSuperficial() {
-  return { color: "#01579b", weight: 1.5, fillColor: "#4fc3f7", fillOpacity: 0.5 };
+  return { color: "#01579b", weight: 1.5, fillColor: "#4fc3f7", opacity: opacidadAgua, fillOpacity: 0.5 * opacidadAgua };
 }
 
 function popupMasaAgua(p, esLineal) {
@@ -345,18 +368,26 @@ async function actualizarMasasAgua() {
 
     capaMasasAgua.clearLayers();
 
-    L.geoJSON(gjL, {
+    capaMasasAguaLineas = L.geoJSON(gjL, {
       style: estiloMasaLineal,
       onEachFeature: (feat, layer) => layer.bindPopup(popupMasaAgua(feat.properties, true)),
     }).addTo(capaMasasAgua);
 
-    L.geoJSON(gjA, {
+    capaMasasAguaPoligonos = L.geoJSON(gjA, {
       style: estiloMasaSuperficial,
       onEachFeature: (feat, layer) => layer.bindPopup(popupMasaAgua(feat.properties, false)),
     }).addTo(capaMasasAgua);
   } catch (e) {
     if (miPeticion === peticionAguaId) console.error("Error cargando masas de agua:", e);
   }
+}
+
+// Reaplica el estilo (con la opacidad actual) a las capas ya cargadas, sin
+// volver a pedir los datos — así el scroll de transparencia responde al
+// instante mientras se arrastra, en vez de esperar a un fetch por cada paso.
+function actualizarOpacidadAgua() {
+  if (capaMasasAguaLineas) capaMasasAguaLineas.setStyle(estiloMasaLineal);
+  if (capaMasasAguaPoligonos) capaMasasAguaPoligonos.setStyle(estiloMasaSuperficial);
 }
 
 function estiloPfafstetter() {
@@ -402,11 +433,28 @@ function actualizarCapasAgua() {
   actualizarPfafstetter();
 }
 
+const controlOpacidadAgua = document.getElementById("control-opacidad-agua");
+const rangoOpacidadAgua = document.getElementById("rango-opacidad-agua");
+const valorOpacidadAgua = document.getElementById("valor-opacidad-agua");
+
+rangoOpacidadAgua.addEventListener("input", () => {
+  const pct = Number(rangoOpacidadAgua.value);
+  valorOpacidadAgua.textContent = `${pct}%`;
+  opacidadAgua = pct / 100;
+  actualizarOpacidadAgua();
+});
+
 map.on("overlayadd", (e) => {
-  if (e.layer === capaMasasAgua) actualizarMasasAgua();
+  if (e.layer === capaMasasAgua) {
+    actualizarMasasAgua();
+    controlOpacidadAgua.style.display = "block";
+  }
   if (e.layer === capaPfafstetter) actualizarPfafstetter();
 });
 map.on("overlayremove", (e) => {
+  if (e.layer === capaMasasAgua) {
+    controlOpacidadAgua.style.display = "none";
+  }
   if (e.layer === capaMasasAgua || e.layer === capaPfafstetter) actualizarAvisoZoom();
 });
 map.on("moveend", () => {
