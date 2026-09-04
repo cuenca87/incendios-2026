@@ -241,6 +241,16 @@ const NOMBRES_ES = {
 
 const map = L.map("map", { zoomControl: true }).setView([40.2, -3.7], 6);
 
+// El límite de demarcaciones necesita verse siempre por delante del
+// perímetro quemado (y de todo lo demás). Como el perímetro se borra y se
+// vuelve a dibujar cada vez que se elige un incendio, si dependiéramos del
+// orden en que se añaden las capas al mapa, el perímetro acabaría casi
+// siempre encima (se redibuja después). Con un pane propio y más z-index
+// que el overlayPane normal (400), las demarcaciones quedan por delante
+// pase lo que pase, sin importar qué se haya tocado después.
+map.createPane("paneDemarcaciones");
+map.getPane("paneDemarcaciones").style.zIndex = 450;
+
 const capaOSM = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "© OpenStreetMap",
   maxZoom: 19,
@@ -291,6 +301,7 @@ async function cargarDemarcaciones() {
     const res = await fetch("demarcaciones_hidrograficas.json");
     const gj = await res.json();
     L.geoJSON(gj, {
+      pane: "paneDemarcaciones",
       style: { color: "#37474f", weight: 3, dashArray: "10 5", fill: false },
       onEachFeature: (feat, layer) => {
         const nombre = feat.properties.nom_demar;
